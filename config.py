@@ -13,12 +13,13 @@ class Settings(BaseSettings):
     ADMIN_USER_IDS: str
 
     # AI Provider
-    AI_PROVIDER: Literal['gemini', 'claude', 'openai']
+    AI_PROVIDER: Literal['gemini', 'claude', 'openai', 'groq']
 
     # AI API Keys (only one is required based on AI_PROVIDER)
     GEMINI_API_KEY: str | None = None
     CLAUDE_API_KEY: str | None = None
     OPENAI_API_KEY: str | None = None
+    GROQ_API_KEY: str | None = None
 
     # Google Services
     GOOGLE_DRIVE_FOLDER_ID: str
@@ -46,6 +47,12 @@ class Settings(BaseSettings):
     GEMINI_MODEL: str = 'gemini-1.5-flash'
     GEMINI_MAX_TOKENS: int = 4096
     GEMINI_TEMPERATURE: float = 0.7
+
+    # Groq (OpenAI-совместимый API: https://console.groq.com)
+    GROQ_BASE_URL: str = 'https://api.groq.com/openai/v1'
+    GROQ_MODEL: str = 'llama-3.3-70b-versatile'
+    GROQ_MAX_TOKENS: int = 4096
+    GROQ_TEMPERATURE: float = 0.7
 
     # News Parser Settings
     NEWS_DAYS_BACK: int = 7  # How many days back to parse news
@@ -85,6 +92,11 @@ class Settings(BaseSettings):
                 raise ValueError(
                     "GEMINI_API_KEY is required when AI_PROVIDER=gemini")
             return self.GEMINI_API_KEY
+        elif self.AI_PROVIDER == 'groq':
+            if not self.GROQ_API_KEY:
+                raise ValueError(
+                    "GROQ_API_KEY is required when AI_PROVIDER=groq")
+            return self.GROQ_API_KEY
         else:
             raise ValueError(f"Unknown AI_PROVIDER: {self.AI_PROVIDER}")
 
@@ -98,6 +110,8 @@ class Settings(BaseSettings):
             return self.OPENAI_MODEL
         elif self.AI_PROVIDER == 'gemini':
             return self.GEMINI_MODEL
+        elif self.AI_PROVIDER == 'groq':
+            return self.GROQ_MODEL
         else:
             raise ValueError(f"Unknown AI_PROVIDER: {self.AI_PROVIDER}")
 
@@ -111,8 +125,24 @@ class Settings(BaseSettings):
             return self.OPENAI_TEMPERATURE
         elif self.AI_PROVIDER == 'gemini':
             return self.GEMINI_TEMPERATURE
+        elif self.AI_PROVIDER == 'groq':
+            return self.GROQ_TEMPERATURE
         else:
             raise ValueError(f"Unknown AI_PROVIDER: {self.AI_PROVIDER}")
+
+    @computed_field
+    @property
+    def ACTIVE_AI_MAX_TOKENS(self) -> int:
+        """Максимум токенов ответа для активного провайдера."""
+        if self.AI_PROVIDER == 'claude':
+            return self.CLAUDE_MAX_TOKENS
+        if self.AI_PROVIDER == 'openai':
+            return self.OPENAI_MAX_TOKENS
+        if self.AI_PROVIDER == 'gemini':
+            return self.GEMINI_MAX_TOKENS
+        if self.AI_PROVIDER == 'groq':
+            return self.GROQ_MAX_TOKENS
+        raise ValueError(f"Unknown AI_PROVIDER: {self.AI_PROVIDER}")
 
 
 settings = Settings()
