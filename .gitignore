@@ -1,0 +1,6 @@
+.venv/
+__pycache__/
+logs/
+ПЛАН_РЕАЛИЗАЦИИ.md
+ТЗ.md
+.env
