@@ -4,3 +4,4 @@ logs/
 ПЛАН_РЕАЛИЗАЦИИ.md
 ТЗ.md
 .env
+credentials/*.json

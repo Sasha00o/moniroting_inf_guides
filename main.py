@@ -32,43 +32,47 @@ async def main():
     """Главная функция."""
     # Настройка логирования
     setup_logging()
-    
+
     bot_logger.info(f"🚀 Запуск бота (режим: {settings.MODE})")
     bot_logger.info(f"AI провайдер: {settings.AI_PROVIDER}")
-    
+
     # Инициализация бота
     bot = Bot(token=settings.TELEGRAM_BOT_TOKEN)
     dp = Dispatcher()
-    
+
     # Регистрация маршрутов и middlewares
     dp.include_router(router)
     dp.message.middleware(LoggingMiddleware())
     dp.callback_query.middleware(LoggingMiddleware())
     dp.message.middleware(ErrorHandlerMiddleware())
     dp.callback_query.middleware(ErrorHandlerMiddleware())
-    
+
     # Регистрация команд
     await setup_bot_commands(bot)
-    
+
     # Запуск планировщика (если не TEST режим)
     scheduler = get_scheduler()
     if settings.MODE != 'TEST':
         scheduler.start()
         bot_logger.info("📅 Планировщик запущен")
-    
+
     try:
         # Graceful shutdown обработчик
         loop = asyncio.get_event_loop()
-        
+
         for sig in (SIGINT, SIGTERM):
-            loop.add_signal_handler(
-                sig,
-                lambda: asyncio.create_task(_shutdown(bot, dp, scheduler))
-            )
-        
+            try:
+                loop.add_signal_handler(
+                    sig,
+                    lambda: asyncio.create_task(_shutdown(bot, dp, scheduler))
+                )
+            except NotImplementedError:
+                bot_logger.warning(
+                    "loop.add_signal_handler not supported on this platform; graceful shutdown disabled")
+
         bot_logger.info("✅ Бот готов к работе")
         await dp.start_polling(bot)
-        
+
     finally:
         await bot.session.close()
 
@@ -76,12 +80,12 @@ async def main():
 async def _shutdown(bot: Bot, dp: Dispatcher, scheduler):
     """Graceful shutdown."""
     bot_logger.info("🛑 Получен сигнал завершения...")
-    
+
     scheduler.stop()
-    
+
     await dp.feed_update(None)  # Signal to stop polling
     await bot.session.close()
-    
+
     bot_logger.info("✅ Бот успешно остановлен")
 
 
