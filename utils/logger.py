@@ -16,6 +16,7 @@ _CONSOLE_FORMAT = (
     "<cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>"
 )
 
+
 class _ComponentLogger:
     """Прокси: импорт до setup_logging() остаётся рабочим после инициализации handlers."""
 
@@ -32,6 +33,8 @@ bot_logger = _ComponentLogger("bot")
 ai_logger = _ComponentLogger("ai")
 sheets_logger = _ComponentLogger("sheets")
 news_logger = _ComponentLogger("news")
+generator_logger = _ComponentLogger("generator")
+scheduler_logger = _ComponentLogger("scheduler")
 
 
 def setup_exception_logging():
@@ -145,6 +148,28 @@ def setup_logging():
         level="DEBUG",
         format=_FILE_FORMAT,
         filter=_component_filter("news"),
+        enqueue=True,
+    )
+
+    logger.add(
+        LOGS_DIR / "generator.log",
+        rotation="10 MB",
+        retention="7 days",
+        compression="zip",
+        level="DEBUG",
+        format=_FILE_FORMAT,
+        filter=_component_filter("generator"),
+        enqueue=True,
+    )
+
+    logger.add(
+        LOGS_DIR / "scheduler.log",
+        rotation="5 MB",
+        retention="7 days",
+        compression="zip",
+        level="DEBUG",
+        format=_FILE_FORMAT,
+        filter=_component_filter("scheduler"),
         enqueue=True,
     )
 
