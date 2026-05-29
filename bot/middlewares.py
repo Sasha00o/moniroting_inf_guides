@@ -12,17 +12,17 @@ class LoggingMiddleware(BaseMiddleware):
 
     async def __call__(
         self,
-        handler: Callable[[Update, Dict[str, Any]], Any],
-        event: Update,
+        handler: Callable[[Message | CallbackQuery, Dict[str, Any]], Any],
+        event: Message | CallbackQuery,
         data: Dict[str, Any],
     ) -> Any:
-        if event.message:
-            user_id = event.message.from_user.id
-            text = event.message.text or "[не текст]"
+        if isinstance(event, Message):
+            user_id = event.from_user.id
+            text = event.text or "[не текст]"
             bot_logger.debug(f"Message from {user_id}: {text[:100]}")
-        elif event.callback_query:
-            user_id = event.callback_query.from_user.id
-            data_str = event.callback_query.data or "[empty]"
+        elif isinstance(event, CallbackQuery):
+            user_id = event.from_user.id
+            data_str = event.data or "[empty]"
             bot_logger.debug(f"Callback from {user_id}: {data_str}")
 
         try:
@@ -37,8 +37,8 @@ class ErrorHandlerMiddleware(BaseMiddleware):
 
     async def __call__(
         self,
-        handler: Callable[[Update, Dict[str, Any]], Any],
-        event: Update,
+        handler: Callable[[Message | CallbackQuery, Dict[str, Any]], Any],
+        event: Message | CallbackQuery,
         data: Dict[str, Any],
     ) -> Any:
         try:
@@ -46,20 +46,20 @@ class ErrorHandlerMiddleware(BaseMiddleware):
         except ValueError as e:
             # Ошибки валидации — показываем пользователю
             bot_logger.warning(f"Validation error: {e}")
-            if event.message:
-                await event.message.answer(
+            if isinstance(event, Message):
+                await event.answer(
                     f"❌ Ошибка: {str(e)[:200]}"
                 )
         except Exception as e:
             # Неожиданные ошибки — логируем и показываем generic message
             bot_logger.exception(f"Unexpected error: {e}")
-            if event.message:
-                await event.message.answer(
+            if isinstance(event, Message):
+                await event.answer(
                     "❌ Произошла ошибка. Пожалуйста, попробуйте позже."
                 )
-            elif event.callback_query:
+            elif isinstance(event, CallbackQuery):
                 try:
-                    await event.callback_query.answer(
+                    await event.answer(
                         "❌ Ошибка обработки",
                         show_alert=True
                     )

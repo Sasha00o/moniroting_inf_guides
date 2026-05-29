@@ -16,11 +16,13 @@ from utils.helpers import format_geo_title, validate_geo
 from utils.logger import ai_logger
 
 # Сколько новостей отдавать в один промпт классификации (лимит токенов)
-MAX_NEWS_IN_CLASSIFY_PROMPT = 30
+# Groq: 12000 токенов/запрос, ~500 токенов на новость = макс 20 новостей
+MAX_NEWS_IN_CLASSIFY_PROMPT = 15
 
 # source_url берётся из новости по news_index, не из ответа AI
 _INFOREASON_FIELDS = (
     "title",
+    "source_type",
     "date",
     "category",
     "description",
@@ -67,6 +69,22 @@ class AIAgent:
                 base_url=settings.GROQ_BASE_URL,
             )
             self._chat_model = settings.GROQ_MODEL
+        elif self.provider == "deepseek":
+            from openai import OpenAI
+
+            self.client = OpenAI(
+                api_key=api_key,
+                base_url=settings.DEEPSEEK_BASE_URL,
+            )
+            self._chat_model = settings.DEEPSEEK_MODEL
+        elif self.provider == "openrouter":
+            from openai import OpenAI
+
+            self.client = OpenAI(
+                api_key=api_key,
+                base_url=settings.OPENROUTER_BASE_URL,
+            )
+            self._chat_model = settings.OPENROUTER_MODEL
         elif self.provider == "gemini":
             import google.generativeai as genai
 
@@ -130,7 +148,11 @@ class AIAgent:
 Только JSON-массив, без markdown и пояснений."""
 
         response_text = await self._call_ai(prompt, temperature=0.3)
+        ai_logger.debug(f"AI response length: {len(response_text)} chars")
+
         raw_items = self._parse_json_response(response_text)
+        ai_logger.info(f"Распарсено {len(raw_items)} элементов из ответа AI")
+
         news_by_index = {i: n for i, n in enumerate(batch, 1)}
 
         inforeasons: list[InfoReason] = []
@@ -150,7 +172,8 @@ class AIAgent:
 
             source_news = news_by_index.get(news_index) if news_index else None
             source_url = (
-                source_news.url if source_news else str(item.get("source_url", "")).strip()
+                source_news.url if source_news else str(
+                    item.get("source_url", "")).strip()
             )
             if not source_url:
                 ai_logger.warning(
@@ -189,7 +212,8 @@ class AIAgent:
         if not inforeasons:
             return []
 
-        ai_logger.info(f"Генерация {min_count}-{max_count} углов для {len(inforeasons)} инфоповодов")
+        ai_logger.info(
+            f"Генерация {min_count}-{max_count} углов для {len(inforeasons)} инфоповодов")
 
         offer_text = (
             f"\n\nОПИСАНИЕ ОФФЕРА:\n{offer_description}" if offer_description else ""
@@ -228,7 +252,8 @@ JSON-массив объектов:
 
             ir_id = self._parse_ai_id(data["inforeason_id"], "inforeason_id")
             if ir_id is None or ir_id not in valid_ir_ids:
-                ai_logger.warning(f"Пропуск угла: неизвестный inforeason_id={ir_id}")
+                ai_logger.warning(
+                    f"Пропуск угла: неизвестный inforeason_id={ir_id}")
                 continue
 
             angles.append(
@@ -304,7 +329,8 @@ JSON-массив:
                     angle_id=angle_id,
                     text=text,
                     format=data["format"],
-                    length=self._parse_ai_int(item.get("length"), default=len(text)),
+                    length=self._parse_ai_int(
+                        item.get("length"), default=len(text)),
                 )
             )
 
@@ -349,14 +375,16 @@ JSON-массив (inforeason_id из списка):
 
         risks: list[Risk] = []
         for item in raw_items:
-            ir_id = self._parse_ai_id(item.get("inforeason_id"), "inforeason_id")
+            ir_id = self._parse_ai_id(
+                item.get("inforeason_id"), "inforeason_id")
             if ir_id is None or ir_id not in valid_ids:
                 continue
             risks.append(
                 Risk(
                     inforeason_id=ir_id,
                     legal_risk=item.get("legal_risk", "не оценено"),
-                    platform_ban_risk=item.get("platform_ban_risk", "не оценено"),
+                    platform_ban_risk=item.get(
+                        "platform_ban_risk", "не оценено"),
                     audience_backlash_risk=item.get(
                         "audience_backlash_risk", "не оценено"
                     ),
@@ -487,7 +515,6 @@ JSON-массив:
         return await asyncio.to_thread(self._call_ai_sync, prompt, temperature)
 
     def _call_openai_compatible_chat(self, prompt: str, temperature: float) -> str:
-        """Chat Completions для OpenAI и Groq (один и тот же SDK)."""
         from openai import APIError, AuthenticationError, RateLimitError
 
         try:
@@ -499,9 +526,15 @@ JSON-массив:
             )
             return response.choices[0].message.content or ""
         except AuthenticationError as e:
+            key_name = {
+                'groq': 'GROQ_API_KEY',
+                'deepseek': 'DEEPSEEK_API_KEY',
+                'openai': 'OPENAI_API_KEY',
+                'openrouter': 'OPENROUTER_API_KEY'
+            }.get(self.provider, 'API_KEY')
             raise ValueError(
                 f"Неверный API-ключ {self.provider.upper()}. "
-                f"Проверьте {'GROQ_API_KEY' if self.provider == 'groq' else 'OPENAI_API_KEY'} в .env"
+                f"Проверьте {key_name} в .env"
             ) from e
         except RateLimitError as e:
             raise ValueError(
@@ -523,7 +556,7 @@ JSON-массив:
             )
             return response.content[0].text
 
-        if self.provider in ("openai", "groq"):
+        if self.provider in ("openai", "groq", "deepseek", "openrouter"):
             return self._call_openai_compatible_chat(prompt, temperature)
 
         if self.provider == "gemini":
@@ -532,7 +565,6 @@ JSON-массив:
                 generation_config={
                     "temperature": temperature,
                     "max_output_tokens": settings.GEMINI_MAX_TOKENS,
-                    "response_mime_type": "application/json",
                 },
             )
             if not response.candidates:
@@ -543,6 +575,13 @@ JSON-массив:
 
     def _parse_json_response(self, response_text: str) -> list[dict[str, Any]]:
         text = response_text.strip()
+
+        if not text:
+            ai_logger.error("AI вернул пустой ответ")
+            return []
+
+        ai_logger.debug(f"AI response (first 500 chars): {text[:500]}")
+
         # Убрать markdown-обёртку ```json ... ```
         fence = re.search(r"```(?:json)?\s*([\s\S]*?)\s*```", text)
         if fence:
@@ -555,18 +594,72 @@ JSON-массив:
             obj_start = text.find("{")
             obj_end = text.rfind("}") + 1
             if obj_start != -1 and obj_end > obj_start:
-                obj = json.loads(text[obj_start:obj_end])
-                if isinstance(obj, list):
-                    return obj
-                for value in obj.values():
-                    if isinstance(value, list):
-                        return value
-            raise ValueError("JSON-массив не найден в ответе AI")
+                try:
+                    obj = json.loads(text[obj_start:obj_end])
+                    if isinstance(obj, list):
+                        return obj
+                    for value in obj.values():
+                        if isinstance(value, list):
+                            return value
+                except json.JSONDecodeError as e:
+                    ai_logger.error(f"Ошибка парсинга JSON: {e}")
+                    ai_logger.error(
+                        f"Проблемный текст: {text[obj_start:obj_end][:200]}")
+                    return []
+            ai_logger.error("JSON-массив не найден в ответе AI")
+            ai_logger.error(f"Ответ AI: {text[:500]}")
+            return []
 
-        data = json.loads(text[start:end])
-        if not isinstance(data, list):
-            raise ValueError("Ответ AI не является JSON-массивом")
-        return data
+        try:
+            data = json.loads(text[start:end])
+            if not isinstance(data, list):
+                ai_logger.error("Ответ AI не является JSON-массивом")
+                return []
+            return data
+        except json.JSONDecodeError as e:
+            ai_logger.error(f"Ошибка парсинга JSON массива: {e}")
+            ai_logger.error(f"Проблемный текст: {text[start:end][:500]}")
+
+            # Попытка восстановить обрезанный JSON
+            try:
+                truncated = text[start:end]
+
+                # Стратегия 1: Найти последний полный объект
+                last_complete = truncated.rfind("},")
+                if last_complete > 0:
+                    fixed_json = truncated[:last_complete+1] + "]"
+                    ai_logger.warning(f"Попытка восстановить обрезанный JSON (стратегия 1)")
+                    data = json.loads(fixed_json)
+                    if isinstance(data, list) and len(data) > 0:
+                        ai_logger.info(f"Восстановлено {len(data)} элементов из обрезанного JSON")
+                        return data
+
+                # Стратегия 2: Найти последний закрывающий }
+                last_brace = truncated.rfind("}")
+                if last_brace > 0:
+                    fixed_json = truncated[:last_brace+1] + "]"
+                    ai_logger.warning(f"Попытка восстановить обрезанный JSON (стратегия 2)")
+                    data = json.loads(fixed_json)
+                    if isinstance(data, list) and len(data) > 0:
+                        ai_logger.info(f"Восстановлено {len(data)} элементов из обрезанного JSON")
+                        return data
+
+                # Стратегия 3: Удалить последний неполный объект
+                # Найти предпоследний }
+                temp = truncated[:last_brace]
+                prev_brace = temp.rfind("}")
+                if prev_brace > 0:
+                    fixed_json = truncated[:prev_brace+1] + "]"
+                    ai_logger.warning(f"Попытка восстановить обрезанный JSON (стратегия 3)")
+                    data = json.loads(fixed_json)
+                    if isinstance(data, list) and len(data) > 0:
+                        ai_logger.info(f"Восстановлено {len(data)} элементов из обрезанного JSON")
+                        return data
+
+            except Exception as recovery_error:
+                ai_logger.error(f"Не удалось восстановить JSON: {recovery_error}")
+
+            return []
 
     @staticmethod
     def _require_fields(item: dict[str, Any], fields: tuple[str, ...]) -> dict[str, Any]:

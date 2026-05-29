@@ -13,17 +13,21 @@ class Settings(BaseSettings):
     ADMIN_USER_IDS: str
 
     # AI Provider
-    AI_PROVIDER: Literal['gemini', 'claude', 'openai', 'groq']
+    AI_PROVIDER: Literal['gemini', 'claude',
+                         'openai', 'groq', 'deepseek', 'openrouter']
 
-    # AI API Keys (only one is required based on AI_PROVIDER)
     GEMINI_API_KEY: str | None = None
     CLAUDE_API_KEY: str | None = None
     OPENAI_API_KEY: str | None = None
     GROQ_API_KEY: str | None = None
+    DEEPSEEK_API_KEY: str | None = None
+    OPENROUTER_API_KEY: str | None = None
 
     # Google Services
     GOOGLE_DRIVE_FOLDER_ID: str
-    GOOGLE_SERVICE_ACCOUNT_FILE: str = 'credentials/google_service_account.json'
+    # OAuth 2.0 (приоритет) или Service Account
+    GOOGLE_OAUTH_CREDENTIALS: str | None = None
+    GOOGLE_SERVICE_ACCOUNT_FILE: str | None = 'credentials/google_service_account.json'
 
     # Scheduler
     SCHEDULE_CRON: str = '0 9 */3 * *'
@@ -44,21 +48,33 @@ class Settings(BaseSettings):
     OPENAI_TEMPERATURE: float = 0.7
 
     # Gemini Model Settings
-    GEMINI_MODEL: str = 'gemini-1.5-flash'
-    GEMINI_MAX_TOKENS: int = 4096
+
+    GEMINI_MODEL: str = 'gemini-2.5-flash'
+    GEMINI_MAX_TOKENS: int = 8192
     GEMINI_TEMPERATURE: float = 0.7
 
     # Groq (OpenAI-совместимый API: https://console.groq.com)
     GROQ_BASE_URL: str = 'https://api.groq.com/openai/v1'
     GROQ_MODEL: str = 'llama-3.3-70b-versatile'
-    GROQ_MAX_TOKENS: int = 4096
+    GROQ_MAX_TOKENS: int = 8192
     GROQ_TEMPERATURE: float = 0.7
 
-    # News Parser Settings
-    NEWS_DAYS_BACK: int = 7  # How many days back to parse news
-    NEWS_MAX_ITEMS: int = 50  # Maximum news items to collect
+    # DeepSeek (OpenAI-совместимый API: https://platform.deepseek.com)
+    DEEPSEEK_BASE_URL: str = 'https://api.deepseek.com'
+    DEEPSEEK_MODEL: str = 'deepseek-chat'
+    DEEPSEEK_MAX_TOKENS: int = 4096
+    DEEPSEEK_TEMPERATURE: float = 0.7
 
-    # Report Generation Settings
+    # OpenRouter (агрегатор моделей: https://openrouter.ai)
+    OPENROUTER_BASE_URL: str = 'https://openrouter.ai/api/v1'
+    OPENROUTER_MODEL: str = 'openai/gpt-oss-120b:free'
+    OPENROUTER_MAX_TOKENS: int = 8192
+    OPENROUTER_TEMPERATURE: float = 0.7
+
+    # News Parser Settings
+    NEWS_DAYS_BACK: int = 7
+    NEWS_MAX_ITEMS: int = 50
+
     INFOREASONS_MIN: int = 10
     INFOREASONS_MAX: int = 20
     ANGLES_MIN: int = 20
@@ -97,6 +113,16 @@ class Settings(BaseSettings):
                 raise ValueError(
                     "GROQ_API_KEY is required when AI_PROVIDER=groq")
             return self.GROQ_API_KEY
+        elif self.AI_PROVIDER == 'deepseek':
+            if not self.DEEPSEEK_API_KEY:
+                raise ValueError(
+                    "DEEPSEEK_API_KEY is required when AI_PROVIDER=deepseek")
+            return self.DEEPSEEK_API_KEY
+        elif self.AI_PROVIDER == 'openrouter':
+            if not self.OPENROUTER_API_KEY:
+                raise ValueError(
+                    "OPENROUTER_API_KEY is required when AI_PROVIDER=openrouter")
+            return self.OPENROUTER_API_KEY
         else:
             raise ValueError(f"Unknown AI_PROVIDER: {self.AI_PROVIDER}")
 
@@ -112,13 +138,16 @@ class Settings(BaseSettings):
             return self.GEMINI_MODEL
         elif self.AI_PROVIDER == 'groq':
             return self.GROQ_MODEL
+        elif self.AI_PROVIDER == 'deepseek':
+            return self.DEEPSEEK_MODEL
+        elif self.AI_PROVIDER == 'openrouter':
+            return self.OPENROUTER_MODEL
         else:
             raise ValueError(f"Unknown AI_PROVIDER: {self.AI_PROVIDER}")
 
     @computed_field
     @property
     def ACTIVE_AI_TEMPERATURE(self) -> float:
-        """Get the active AI temperature based on AI_PROVIDER."""
         if self.AI_PROVIDER == 'claude':
             return self.CLAUDE_TEMPERATURE
         elif self.AI_PROVIDER == 'openai':
@@ -127,6 +156,10 @@ class Settings(BaseSettings):
             return self.GEMINI_TEMPERATURE
         elif self.AI_PROVIDER == 'groq':
             return self.GROQ_TEMPERATURE
+        elif self.AI_PROVIDER == 'deepseek':
+            return self.DEEPSEEK_TEMPERATURE
+        elif self.AI_PROVIDER == 'openrouter':
+            return self.OPENROUTER_TEMPERATURE
         else:
             raise ValueError(f"Unknown AI_PROVIDER: {self.AI_PROVIDER}")
 
@@ -142,6 +175,10 @@ class Settings(BaseSettings):
             return self.GEMINI_MAX_TOKENS
         if self.AI_PROVIDER == 'groq':
             return self.GROQ_MAX_TOKENS
+        if self.AI_PROVIDER == 'deepseek':
+            return self.DEEPSEEK_MAX_TOKENS
+        if self.AI_PROVIDER == 'openrouter':
+            return self.OPENROUTER_MAX_TOKENS
         raise ValueError(f"Unknown AI_PROVIDER: {self.AI_PROVIDER}")
 
 

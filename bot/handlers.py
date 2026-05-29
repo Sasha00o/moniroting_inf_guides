@@ -1,7 +1,7 @@
 """Обработчики команд Telegram бота."""
 
 from aiogram import Router, F
-from aiogram.types import Message, CallbackQuery, Chat
+from aiogram.types import Message, CallbackQuery
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
@@ -70,17 +70,29 @@ async def cmd_help(message: Message):
 @router.message(Command("geos"))
 async def cmd_geos(message: Message):
     """Команда /geos - список поддерживаемых GEO."""
-    geos = list_supported_geos()
-    geos_text = "\n".join(f"{flag} {name} ({code})"
-                          for code, flag_name in geos
-                          for flag in [flag_name.split()[0]])
+    from utils.helpers import GEO_REGISTRY
 
-    geos_str = "\n".join(f"{name}" for _, name in geos)
+    # Разбиваем на регионы для компактности
+    latam_codes = ["AR", "BO", "BR", "CL", "CO", "CR", "DO", "EC",
+                   "GT", "HN", "MX", "NI", "PA", "PE", "PY", "SV", "UY", "VE"]
+    asia_codes = ["IN", "ID", "PH", "TH", "VN"]
+    africa_codes = ["NG", "ZA", "KE"]
 
-    await message.answer(
-        f"🌍 **Поддерживаемые страны:**\n\n{geos_str}",
-        reply_markup=geos_keyboard()
-    )
+    text = "🌍 **Поддерживаемые страны:**\n\n"
+
+    text += "🌎 **Латинская Америка:**\n"
+    text += ", ".join(
+        f"{GEO_REGISTRY[code]['flag']}{code}" for code in latam_codes)
+
+    text += "\n\n🌏 **Азия:**\n"
+    text += ", ".join(
+        f"{GEO_REGISTRY[code]['flag']}{code}" for code in asia_codes)
+
+    text += "\n\n🌍 **Африка:**\n"
+    text += ", ".join(
+        f"{GEO_REGISTRY[code]['flag']}{code}" for code in africa_codes)
+
+    await message.answer(text, reply_markup=geos_keyboard())
 
 
 @router.message(Command("status"))
@@ -155,26 +167,40 @@ async def cb_generate_menu(query: CallbackQuery, state: FSMContext):
 async def cb_select_geo(query: CallbackQuery, state: FSMContext):
     """Выбор GEO из клавиатуры."""
     geo = query.data.replace("geo_", "")
-    await query.message.delete()
-    await _start_generation(query.message, state, geo)
+
+    try:
+        geo = geo.upper()
+        geo_title = format_geo_title(geo)
+
+        await query.message.edit_text(
+            f"Подтвердите генерацию отчета для {geo_title}?",
+            reply_markup=confirm_generate_keyboard(geo)
+        )
+
+        await state.update_data(selected_geo=geo)
+        await query.answer()
+
+    except GeoError as e:
+        await query.message.edit_text(f"❌ Ошибка: {str(e)}")
+        await query.answer()
 
 
 @router.callback_query(F.data.startswith("confirm_generate_"))
 async def cb_confirm_generate(query: CallbackQuery, state: FSMContext):
     """Подтверждение генерации."""
     geo = query.data.replace("confirm_generate_", "")
-    await query.message.delete()
 
-    # Запускаем генерацию в фоне
-    await _stream_generation(query.message, state, geo)
+    await query.message.edit_text("⏳ Начинаю генерацию...")
     await query.answer()
+
+    # Запускаем генерацию
+    await _stream_generation(query.message, state, geo)
 
 
 @router.callback_query(F.data == "cancel_generate")
 async def cb_cancel_generate(query: CallbackQuery, state: FSMContext):
     """Отмена генерации."""
-    await query.message.delete()
-    await query.message.answer("❌ Отменено")
+    await query.message.edit_text("❌ Отменено")
     await state.clear()
     await query.answer()
 
@@ -197,10 +223,27 @@ async def cb_status(query: CallbackQuery):
 @router.callback_query(F.data == "list_geos")
 async def cb_list_geos(query: CallbackQuery):
     """Кнопка 'Доступные GEO'."""
-    geos = list_supported_geos()
-    geos_str = "\n".join(f"{name}" for _, name in geos)
+    from utils.helpers import GEO_REGISTRY
 
-    await query.answer(geos_str, show_alert=True)
+    latam_codes = ["AR", "BO", "BR", "CL", "CO", "CR", "DO", "EC",
+                   "GT", "HN", "MX", "NI", "PA", "PE", "PY", "SV", "UY", "VE"]
+    asia_codes = ["IN", "ID", "PH", "TH", "VN"]
+    africa_codes = ["NG", "ZA", "KE"]
+
+    text = "🌍 **Поддерживаемые страны:**\n\n"
+    text += "🌎 **Латинская Америка:**\n"
+    text += ", ".join(
+        f"{GEO_REGISTRY[code]['flag']}{code}" for code in latam_codes)
+    text += "\n\n🌏 **Азия:**\n"
+    text += ", ".join(
+        f"{GEO_REGISTRY[code]['flag']}{code}" for code in asia_codes)
+    text += "\n\n🌍 **Африка:**\n"
+    text += ", ".join(
+        f"{GEO_REGISTRY[code]['flag']}{code}" for code in africa_codes)
+
+    # Отправляем как новое сообщение, а не через callback answer (лимит 200 символов)
+    await query.message.answer(text, reply_markup=geos_keyboard())
+    await query.answer()  # Просто закрываем callback без текста
 
 
 async def _start_generation(message: Message, state: FSMContext, geo: str):
@@ -222,12 +265,11 @@ async def _start_generation(message: Message, state: FSMContext, geo: str):
 
 async def _stream_generation(message: Message, state: FSMContext, geo: str):
     """Генерация отчета с потоком статусов."""
-    user_id = message.from_user.id
+    bot = message.bot
+    user_id = message.chat.id
 
     try:
         generator = ReportGenerator()
-
-        # Отслеживаем прогресс
         progress_message = None
         active_generations[user_id] = {
             "geo": geo,
@@ -237,7 +279,8 @@ async def _stream_generation(message: Message, state: FSMContext, geo: str):
 
         async for status in generator.generate_report(geo):
             if status["status"] == "error":
-                await message.answer(
+                await bot.send_message(
+                    message.chat.id,
                     status["message"],
                     reply_markup=main_menu_keyboard()
                 )
@@ -253,52 +296,64 @@ async def _stream_generation(message: Message, state: FSMContext, geo: str):
 
             # Отправляем или обновляем сообщение о прогрессе
             if progress_message is None:
-                progress_message = await message.answer(status["message"])
+                progress_message = await bot.send_message(message.chat.id, status["message"])
             else:
                 try:
-                    await progress_message.edit_text(status["message"])
+                    await bot.edit_message_text(
+                        status["message"],
+                        message.chat.id,
+                        progress_message.message_id
+                    )
                 except Exception:
-                    # Игнорируем ошибки при редактировании (нет изменений)
                     pass
 
-            if status["status"] == "completed":
-                # Удаляем сообщение о прогрессе
+            if status["status"] == "completed" and status["stage"] == "sheets":
                 try:
-                    await progress_message.delete()
+                    await bot.delete_message(message.chat.id, progress_message.message_id)
                 except Exception:
                     pass
 
-                # Отправляем финальное сообщение с кнопкой
                 sheet_url = status.get("data", {}).get("sheet_url")
+                data = status.get("data", {})
+
                 if sheet_url:
-                    await message.answer(
+                    await bot.send_message(
+                        message.chat.id,
                         "✅ Отчет готов!",
                         reply_markup=view_sheet_keyboard(sheet_url)
                     )
+                else:
+                    # Если Google Sheets недоступен, отправляем только статистику
+                    await bot.send_message(
+                        message.chat.id,
+                        f"✅ Отчет создан!\n\n"
+                        f"📊 Статистика:\n"
+                        f"• Инфоповодов: {data.get('inforeasons_count', 0)}\n"
+                        f"• Углов: {data.get('angles_count', 0)}\n"
+                        f"• Заголовков: {data.get('headlines_count', 0)}\n\n"
+                        f"⚠️ Google Sheets недоступен, отчет сохранен локально.",
+                        reply_markup=main_menu_keyboard()
+                    )
 
-                # Логируем успешную генерацию
-                data = status.get("data", {})
                 bot_logger.info(
                     f"Отчет успешно создан для {geo}: "
                     f"{data.get('inforeasons_count', 0)} инфоповодов, "
                     f"{data.get('angles_count', 0)} углов, "
                     f"{data.get('headlines_count', 0)} заголовков"
                 )
-
                 break
 
     except Exception as e:
         bot_logger.exception(f"Критическая ошибка при генерации отчета: {e}")
-        await message.answer(
+        await bot.send_message(
+            message.chat.id,
             f"❌ Критическая ошибка: {str(e)[:100]}",
             reply_markup=main_menu_keyboard()
         )
 
     finally:
-        # Убираем из активных генераций
         if user_id in active_generations:
             del active_generations[user_id]
-
         await state.clear()
 
 

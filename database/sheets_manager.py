@@ -17,29 +17,97 @@ class SheetsManager:
         """Инициализация клиента Google Sheets."""
         try:
             import gspread
-            from google.oauth2.service_account import Credentials
+            import os
 
             self.gspread = gspread
-            self.Credentials = Credentials
             self._client = None
             sheets_logger.info("SheetsManager инициализирован")
         except ImportError:
-            sheets_logger.error("gspread или google-auth не установлены")
+            sheets_logger.error("gspread не установлен")
             raise
 
     @property
     def client(self):
-        """Lazy инициализация клиента."""
+        """Lazy инициализация клиента с поддержкой OAuth и Service Account."""
         if self._client is None:
             from config import settings
+            import os
 
-            creds = self.Credentials.from_service_account_file(
-                settings.GOOGLE_SERVICE_ACCOUNT_FILE,
-                scopes=['https://www.googleapis.com/auth/spreadsheets',
-                        'https://www.googleapis.com/auth/drive']
-            )
-            self._client = self.gspread.authorize(creds)
+            # Проверяем, какой метод авторизации использовать
+            oauth_creds_path = getattr(settings, 'GOOGLE_OAUTH_CREDENTIALS', None)
+            service_account_path = getattr(settings, 'GOOGLE_SERVICE_ACCOUNT_FILE', None)
+
+            if oauth_creds_path and os.path.exists(oauth_creds_path):
+                # OAuth 2.0 авторизация
+                sheets_logger.info("Использую OAuth 2.0 авторизацию")
+                self._client = self._authorize_oauth(oauth_creds_path)
+            elif service_account_path and os.path.exists(service_account_path):
+                # Service Account авторизация
+                sheets_logger.info("Использую Service Account авторизацию")
+                from google.oauth2.service_account import Credentials
+
+                creds = Credentials.from_service_account_file(
+                    service_account_path,
+                    scopes=['https://www.googleapis.com/auth/spreadsheets',
+                            'https://www.googleapis.com/auth/drive']
+                )
+                self._client = self.gspread.authorize(creds)
+            else:
+                raise ValueError(
+                    "Не найдены credentials для Google Sheets. "
+                    "Настройте GOOGLE_OAUTH_CREDENTIALS или GOOGLE_SERVICE_ACCOUNT_FILE"
+                )
+
         return self._client
+
+    def _authorize_oauth(self, credentials_path: str):
+        """OAuth 2.0 авторизация для доступа от имени пользователя."""
+        from google.auth.transport.requests import Request
+        from google.oauth2.credentials import Credentials as OAuthCredentials
+        import os
+
+        SCOPES = [
+            'https://www.googleapis.com/auth/spreadsheets',
+            'https://www.googleapis.com/auth/drive.file'
+        ]
+
+        token_path = 'credentials/token.json'
+        creds = None
+
+        # Загружаем существующий токен
+        if os.path.exists(token_path):
+            try:
+                creds = OAuthCredentials.from_authorized_user_file(token_path, SCOPES)
+                sheets_logger.info("Загружен существующий OAuth токен")
+            except Exception as e:
+                sheets_logger.warning(f"Не удалось загрузить токен: {e}")
+                creds = None
+
+        # Если токена нет или он истек
+        if not creds or not creds.valid:
+            if creds and creds.expired and creds.refresh_token:
+                try:
+                    sheets_logger.info("Обновление OAuth токена...")
+                    creds.refresh(Request())
+
+                    # Сохраняем обновленный токен
+                    with open(token_path, 'w') as token:
+                        token.write(creds.to_json())
+                    sheets_logger.info("Токен успешно обновлен")
+                except Exception as e:
+                    sheets_logger.error(f"Не удалось обновить токен: {e}")
+                    creds = None
+
+            if not creds:
+                # Токена нет - нужна первичная авторизация
+                raise ValueError(
+                    "OAuth токен не найден или истек. "
+                    "Выполните первичную авторизацию:\n"
+                    "1. На машине с браузером запустите: python authorize_oauth.py\n"
+                    "2. Скопируйте созданный файл credentials/token.json на сервер"
+                )
+
+        return self.gspread.authorize(creds)
 
     def create_report_file(self, geo: str, on_date: date | None = None) -> tuple[str, str]:
         """
@@ -61,20 +129,15 @@ class SheetsManager:
         sheets_logger.info(f"Создаю новый файл Google Sheets: {filename}")
 
         try:
-            # Создаем новый файл
-            spreadsheet = self.client.create(filename)
-            spreadsheet_id = spreadsheet.id
-
-            # Перемещаем в нужную папку если указана
+            # Создаем новый файл в указанной папке (если есть)
             if settings.GOOGLE_DRIVE_FOLDER_ID:
-                try:
-                    self.client.drive.move_file(
-                        spreadsheet_id,
-                        settings.GOOGLE_DRIVE_FOLDER_ID
-                    )
-                except AttributeError:
-                    sheets_logger.warning(
-                        "gspread client has no drive.move_file; skipping move. Use Drive API to move file.")
+                # Создаем файл сразу в нужной папке
+                spreadsheet = self.client.create(filename, folder_id=settings.GOOGLE_DRIVE_FOLDER_ID)
+            else:
+                # Создаем в корне Drive Service Account
+                spreadsheet = self.client.create(filename)
+
+            spreadsheet_id = spreadsheet.id
 
             # Удаляем лист "Sheet1" (создается по умолчанию)
             try:
@@ -94,272 +157,126 @@ class SheetsManager:
             sheets_logger.exception(f"Ошибка создания файла: {e}")
             raise
 
-    def write_header(
-        self,
-        worksheet,
-        geo: str,
-        on_date: date,
-        period_start: date,
-        period_end: date,
-        responsible: str | None = None,
-    ) -> int:
-        """
-        Запись шапки отчета (название, дата, период).
-
-        Returns:
-            Номер строки после шапки (для начала блоков)
-        """
+    def _prepare_header(self, geo: str, on_date: date, period_start: date, period_end: date, responsible: str | None, start_row: int):
+        """Подготовка данных шапки для batch update."""
         from utils.helpers import format_geo_title
 
         geo_title = format_geo_title(geo)
         date_str = format_date_display(on_date)
         period_str = format_period_display(period_start, period_end)
 
-        # Строка 1: Заголовок
-        worksheet.update_cell(1, 1, f"{geo_title} | {date_str}")
-        worksheet.merge_cells('A1:H1')
-
-        # Строка 2: Период
-        worksheet.update_cell(2, 1, f"Период: {period_str}")
-        worksheet.merge_cells('A2:H2')
-
+        data = []
+        data.append([f"{geo_title} | {date_str}"])
+        data.append([f"Период: {period_str}"])
         if responsible:
-            worksheet.update_cell(3, 1, f"Ответственный: {responsible}")
+            data.append([f"Ответственный: {responsible}"])
+        else:
+            data.append([""])
+        data.append([""])
 
-        # Форматирование шапки
-        self._format_header(worksheet)
+        return data, start_row + 5
 
-        return 5  # Начало блоков после шапки
+    def _prepare_block_1_inforeasons(self, inforeasons: List[InfoReason], start_row: int):
+        """Подготовка данных блока 1 для batch update."""
+        data = []
+        data.append(["📰 БЛОК 1: СЫРЫЕ ИНФОПОВОДЫ"])
+        data.append(["Заголовок", "Источник", "Дата", "Категория", "Описание", "Триггер", "Срочность"])
 
-    def write_block_1_inforeasons(
-        self,
-        worksheet,
-        inforeasons: List[InfoReason],
-        start_row: int,
-    ) -> int:
-        """Запись Блока 1: Сырые инфоповоды."""
-        if not inforeasons:
-            return start_row
+        for ir in inforeasons:
+            urgency_display = "🔥 Срочно" if "24-48" in ir.urgency or "срочно" in ir.urgency.lower() else "⏳ " + ir.urgency
+            data.append([ir.title, ir.source_url, ir.date, ir.category, ir.description, ir.emotional_trigger, urgency_display])
 
-        # Заголовок блока
-        worksheet.update_cell(start_row, 1, "📰 БЛОК 1: СЫРЫЕ ИНФОПОВОДЫ")
-        worksheet.merge_cells(f'A{start_row}:G{start_row}')
-        self._format_block_header(worksheet, start_row)
+        data.append([""])
+        return data, start_row + len(data) + 1
 
-        # Заголовки колонок
-        headers = ["Заголовок", "Источник", "Дата",
-                   "Категория", "Описание", "Триггер", "Срочность"]
-        for col, header in enumerate(headers, 1):
-            worksheet.update_cell(start_row + 1, col, header)
+    def _prepare_block_2_angles(self, angles: List[Angle], start_row: int):
+        """Подготовка данных блока 2 для batch update."""
+        data = []
+        data.append(["💡 БЛОК 2: УГЛЫ И ИДЕИ"])
 
-        # Данные
-        for i, ir in enumerate(inforeasons):
-            row = start_row + 2 + i
-            worksheet.update_cell(row, 1, ir.title)
-            worksheet.update_cell(row, 2, ir.source_url)  # Будет гиперссылка
-            worksheet.update_cell(row, 3, ir.date)
-            worksheet.update_cell(row, 4, ir.category)
-            worksheet.update_cell(row, 5, ir.description)
-            worksheet.update_cell(row, 6, ir.emotional_trigger)
-
-            # Срочность с эмодзи
-            urgency_display = "🔥 Срочно" if "24-48" in ir.urgency or "срочно" in ir.urgency.lower() else "⏳ " + \
-                ir.urgency
-            worksheet.update_cell(row, 7, urgency_display)
-
-        return start_row + 2 + len(inforeasons) + 2
-
-    def write_block_2_angles(
-        self,
-        worksheet,
-        angles: List[Angle],
-        start_row: int,
-    ) -> int:
-        """Запись Блока 2: Углы и идеи."""
         if not angles:
-            return start_row
+            data.append(["⚠️ Углы не созданы (проблема с AI генерацией)"])
+            data.append([""])
+            return data, start_row + len(data) + 1
 
-        # Заголовок блока
-        worksheet.update_cell(start_row, 1, "💡 БЛОК 2: УГЛЫ И ИДЕИ")
-        worksheet.merge_cells(f'A{start_row}:G{start_row}')
-        self._format_block_header(worksheet, start_row)
+        data.append(["ID", "Инфоповод", "Угол", "Связь с офером", "Боль", "Тип", "Приоритет"])
 
-        # Заголовки колонок
-        headers = ["ID", "Инфоповод", "Угол",
-                   "Связь с офером", "Боль", "Тип", "Приоритет"]
-        for col, header in enumerate(headers, 1):
-            worksheet.update_cell(start_row + 1, col, header)
+        for angle in angles:
+            data.append([str(angle.id), f"#{angle.inforeason_id}", angle.angle_text, angle.offer_connection, angle.target_pain, angle.creative_type, angle.priority])
 
-        # Данные
-        for i, angle in enumerate(angles):
-            row = start_row + 2 + i
-            worksheet.update_cell(row, 1, str(angle.id))
-            worksheet.update_cell(row, 2, f"#{angle.inforeason_id}")
-            worksheet.update_cell(row, 3, angle.angle_text)
-            worksheet.update_cell(row, 4, angle.offer_connection)
-            worksheet.update_cell(row, 5, angle.target_pain)
-            worksheet.update_cell(row, 6, angle.creative_type)
+        data.append([""])
+        return data, start_row + len(data) + 1
 
-            # Приоритет с цветом (для условного форматирования)
-            worksheet.update_cell(row, 7, angle.priority)
+    def _prepare_block_3_headlines(self, headlines: List[Headline], start_row: int):
+        """Подготовка данных блока 3 для batch update."""
+        data = []
+        data.append(["✍️ БЛОК 3: ЗАГОЛОВКИ"])
 
-        return start_row + 2 + len(angles) + 2
-
-    def write_block_3_headlines(
-        self,
-        worksheet,
-        headlines: List[Headline],
-        start_row: int,
-    ) -> int:
-        """Запись Блока 3: Заголовки."""
         if not headlines:
-            return start_row
+            data.append(["⚠️ Заголовки не созданы (нет углов)"])
+            data.append([""])
+            return data, start_row + len(data) + 1
 
-        # Заголовок блока
-        worksheet.update_cell(start_row, 1, "✍️ БЛОК 3: ЗАГОЛОВКИ")
-        worksheet.merge_cells(f'A{start_row}:D{start_row}')
-        self._format_block_header(worksheet, start_row)
+        data.append(["Заголовок", "Идея #", "Формат", "Длина"])
 
-        # Заголовки колонок
-        headers = ["Заголовок", "Идея #", "Формат", "Длина"]
-        for col, header in enumerate(headers, 1):
-            worksheet.update_cell(start_row + 1, col, header)
+        for headline in headlines:
+            data.append([headline.text, str(headline.angle_id), headline.format, str(headline.length)])
 
-        # Данные
-        for i, headline in enumerate(headlines):
-            row = start_row + 2 + i
-            worksheet.update_cell(row, 1, headline.text)
-            worksheet.update_cell(row, 2, str(headline.angle_id))
-            worksheet.update_cell(row, 3, headline.format)
-            worksheet.update_cell(row, 4, str(headline.length))
+        data.append([""])
+        return data, start_row + len(data) + 1
 
-        return start_row + 2 + len(headlines) + 2
+    def _prepare_block_4_recommendations(self, recommendations: List[Recommendation], start_row: int):
+        """Подготовка данных блока 4 для batch update."""
+        data = []
+        data.append(["🎯 БЛОК 4: ТОП-5 РЕКОМЕНДАЦИЙ К ТЕСТУ"])
 
-    def write_block_4_recommendations(
-        self,
-        worksheet,
-        recommendations: List[Recommendation],
-        start_row: int,
-    ) -> int:
-        """Запись Блока 4: Рекомендации для теста (топ-5)."""
         if not recommendations:
-            return start_row
+            data.append(["⚠️ Рекомендации не созданы (недостаточно углов)"])
+            data.append([""])
+            return data, start_row + len(data) + 1
 
-        # Заголовок блока
-        worksheet.update_cell(
-            start_row, 1, "🎯 БЛОК 4: ТОП-5 РЕКОМЕНДАЦИЙ К ТЕСТУ")
-        worksheet.merge_cells(f'A{start_row}:E{start_row}')
-        self._format_block_header(worksheet, start_row)
+        data.append(["Ранг", "Идея #", "Обоснование", "Свежесть", "Триггер"])
 
-        # Заголовки колонок
-        headers = ["Ранг", "Идея #", "Обоснование", "Свежесть", "Триггер"]
-        for col, header in enumerate(headers, 1):
-            worksheet.update_cell(start_row + 1, col, header)
+        for rec in recommendations[:5]:
+            data.append([f"#{rec.rank}", str(rec.angle_id), rec.reasoning[:100], f"{rec.freshness_score}/10", f"{rec.trigger_strength_score}/10"])
 
-        # Данные
-        for i, rec in enumerate(recommendations[:5]):
-            row = start_row + 2 + i
-            worksheet.update_cell(row, 1, f"#{rec.rank}")
-            worksheet.update_cell(row, 2, str(rec.angle_id))
-            worksheet.update_cell(row, 3, rec.reasoning[:100])
-            worksheet.update_cell(row, 4, f"{rec.freshness_score}/10")
-            worksheet.update_cell(row, 5, f"{rec.trigger_strength_score}/10")
+        data.append([""])
+        return data, start_row + len(data) + 1
 
-        return start_row + 2 + len(recommendations[:5]) + 2
+    def _prepare_block_5_risks(self, risks: List[Risk], start_row: int):
+        """Подготовка данных блока 5 для batch update."""
+        data = []
+        data.append(["⚠️ БЛОК 5: РИСКИ"])
 
-    def write_block_5_risks(
-        self,
-        worksheet,
-        risks: List[Risk],
-        start_row: int,
-    ) -> int:
-        """Запись Блока 5: Риски."""
         if not risks:
-            return start_row
+            data.append(["⚠️ Риски не оценены"])
+            data.append([""])
+            return data, start_row + len(data) + 1
 
-        # Заголовок блока
-        worksheet.update_cell(start_row, 1, "⚠️ БЛОК 5: РИСКИ")
-        worksheet.merge_cells(f'A{start_row}:E{start_row}')
-        self._format_block_header(worksheet, start_row)
+        data.append(["Инфоповод #", "Юридический", "Бан платформой", "Негатив аудитории", "Срок"])
 
-        # Заголовки колонок
-        headers = ["Инфоповод #", "Юридический",
-                   "Бан платформой", "Негатив аудитории", "Срок"]
-        for col, header in enumerate(headers, 1):
-            worksheet.update_cell(start_row + 1, col, header)
+        for risk in risks[:5]:
+            data.append([str(risk.inforeason_id), risk.legal_risk[:30], risk.platform_ban_risk[:30], risk.audience_backlash_risk[:30], risk.expiry_time[:30]])
 
-        # Данные
-        for i, risk in enumerate(risks[:5]):
-            row = start_row + 2 + i
-            worksheet.update_cell(row, 1, str(risk.inforeason_id))
-            worksheet.update_cell(row, 2, risk.legal_risk[:30])
-            worksheet.update_cell(row, 3, risk.platform_ban_risk[:30])
-            worksheet.update_cell(row, 4, risk.audience_backlash_risk[:30])
-            worksheet.update_cell(row, 5, risk.expiry_time[:30])
+        data.append([""])
+        return data, start_row + len(data) + 1
 
-        return start_row + 2 + len(risks[:5]) + 2
+    def _prepare_block_6_urgency(self, urgency_board: UrgencyBoard, start_row: int):
+        """Подготовка данных блока 6 для batch update."""
+        data = []
+        data.append(["⏰ БЛОК 6: СРОЧНОСТЬ"])
 
-    def write_block_6_urgency(
-        self,
-        worksheet,
-        urgency_board: UrgencyBoard,
-        start_row: int,
-    ) -> int:
-        """Запись Блока 6: Срочность."""
-        # Заголовок блока
-        worksheet.update_cell(start_row, 1, "⏰ БЛОК 6: СРОЧНОСТЬ")
-        worksheet.merge_cells(f'A{start_row}:B{start_row}')
-        self._format_block_header(worksheet, start_row)
+        urgent_str = ", ".join(str(id) for id in urgency_board.urgent_48h) if urgency_board.urgent_48h else "—"
+        data.append(["🔥 Срочно (24-48ч)", urgent_str])
 
-        # Срочно 24-48ч
-        worksheet.update_cell(start_row + 1, 1, "🔥 Срочно (24-48ч)")
-        urgent_str = ", ".join(
-            str(id) for id in urgency_board.urgent_48h) if urgency_board.urgent_48h else "—"
-        worksheet.update_cell(start_row + 1, 2, urgent_str)
+        wait_str = ", ".join(str(id) for id in urgency_board.can_wait) if urgency_board.can_wait else "—"
+        data.append(["⏳ Можно позже", wait_str])
 
-        # Можно позже
-        worksheet.update_cell(start_row + 2, 1, "⏳ Можно позже")
-        wait_str = ", ".join(
-            str(id) for id in urgency_board.can_wait) if urgency_board.can_wait else "—"
-        worksheet.update_cell(start_row + 2, 2, wait_str)
-
-        return start_row + 4
-
-    def _format_header(self, worksheet):
-        """Форматирование шапки отчета."""
-        try:
-            # Синий фон для шапки
-            light_blue = {
-                "red": 0.2,
-                "green": 0.6,
-                "blue": 1.0
-            }
-            white_text = {
-                "red": 1.0,
-                "green": 1.0,
-                "blue": 1.0
-            }
-
-            for row in range(1, 4):
-                for col in ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H']:
-                    cell = worksheet.cell_value(row, ord(col) - ord('A') + 1)
-                    if cell:  # Если есть текст
-                        pass  # Форматирование через batch_update если нужно
-        except Exception as e:
-            sheets_logger.warning(f"Ошибка форматирования шапки: {e}")
-
-    def _format_block_header(self, worksheet, row: int):
-        """Форматирование заголовка блока."""
-        try:
-            # Серый фон для заголовков блоков
-            pass  # Форматирование через batch_update если нужно
-        except Exception as e:
-            sheets_logger.warning(
-                f"Ошибка форматирования заголовка блока: {e}")
+        return data, start_row + len(data) + 1
 
     def write_report(self, report: Report) -> str:
         """
-        Запись полного отчета в Google Sheets.
+        Запись полного отчета в Google Sheets с batch updates.
 
         Returns:
             URL файла
@@ -374,34 +291,44 @@ class SheetsManager:
         # Вычисляем период
         period_start, period_end = news_period()
 
-        # Пишем все блоки
-        current_row = self.write_header(
-            worksheet,
-            report.geo,
-            date.today(),
-            period_start,
-            period_end,
-            report.responsible
+        # Собираем все данные в один массив для batch update
+        all_data = []
+        current_row = 1
+
+        # Шапка
+        header_data, current_row = self._prepare_header(
+            report.geo, date.today(), period_start, period_end, report.responsible, current_row
         )
+        all_data.extend(header_data)
 
-        current_row = self.write_block_1_inforeasons(
-            worksheet, report.inforeasons, current_row)
-        current_row = self.write_block_2_angles(
-            worksheet, report.angles, current_row)
-        current_row = self.write_block_3_headlines(
-            worksheet, report.headlines, current_row)
+        # Блок 1: Инфоповоды
+        block1_data, current_row = self._prepare_block_1_inforeasons(report.inforeasons, current_row)
+        all_data.extend(block1_data)
 
-        if report.recommendations:
-            current_row = self.write_block_4_recommendations(
-                worksheet, report.recommendations, current_row)
+        # Блок 2: Углы
+        block2_data, current_row = self._prepare_block_2_angles(report.angles, current_row)
+        all_data.extend(block2_data)
 
-        if report.risks:
-            current_row = self.write_block_5_risks(
-                worksheet, report.risks, current_row)
+        # Блок 3: Заголовки
+        block3_data, current_row = self._prepare_block_3_headlines(report.headlines, current_row)
+        all_data.extend(block3_data)
 
-        if report.urgency_board:
-            current_row = self.write_block_6_urgency(
-                worksheet, report.urgency_board, current_row)
+        # Блок 4: Рекомендации
+        block4_data, current_row = self._prepare_block_4_recommendations(report.recommendations, current_row)
+        all_data.extend(block4_data)
+
+        # Блок 5: Риски
+        block5_data, current_row = self._prepare_block_5_risks(report.risks, current_row)
+        all_data.extend(block5_data)
+
+        # Блок 6: Срочность
+        block6_data, current_row = self._prepare_block_6_urgency(report.urgency_board, current_row)
+        all_data.extend(block6_data)
+
+        # Batch update - один запрос вместо сотен
+        sheets_logger.info(f"Запись {len(all_data)} строк в Google Sheets через batch update")
+        if all_data:
+            worksheet.update(all_data, value_input_option='USER_ENTERED')
 
         sheets_logger.info(f"Отчет записан в Google Sheets: {file_url}")
         return file_url

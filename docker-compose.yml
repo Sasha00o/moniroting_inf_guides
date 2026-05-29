@@ -1,0 +1,14 @@
+version: '3.8'
+
+services:
+  ai-monitor-bot:
+    build: ./
+    container_name: ai-monitor
+    restart: unless-stopped
+    env_file: .env
+    volumes:
+      - ./:/app
+      - ./logs:/app/logs
+      - ./credentials:/app/credentials
+    environment:
+      - PYTHONUNBUFFERED=1

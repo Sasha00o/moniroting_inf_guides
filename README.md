@@ -21,70 +21,145 @@
 - 💬 **Telegram интеграция** - полный контроль через бота
 - 📰 **Агрегация новостей** из Google News и локальных RSS лент
 
-## 🚀 Быстрый старт
+## 🚀 Быстрый старт (5 минут)
 
-### 1. Требования
+### ⚡ Минимальная проверка (тест AI)
 
+Просто проверить, работает ли AI провайдер:
+
+```bash
+# 1. Установи зависимости
+pip install -r requirements.txt
+
+# 2. Скопируй конфиг
+cp .env.example .env
+
+# 3. Заполни ТОЛЬКО AI ключ в .env:
+# AI_PROVIDER=groq
+# GROQ_API_KEY=gsk_xxxxxxx
+
+# 4. Запусти тест AI
+python test_ai_agent.py
+```
+
+✅ Если вывод показал результат AI - все работает!
+
+---
+
+### 🔧 Полная установка (Telegram бот)
+
+#### 1. Требования
 - Python 3.11+
 - Telegram Bot Token (получи в [@BotFather](https://t.me/botfather))
-- API ключ одного из AI провайдеров (Gemini, Claude, OpenAI или Groq)
-- Google Service Account для Google Sheets API
-- pip
+- API ключ одного из AI провайдеров:
+  - **Groq** (бесплатно, быстро) 👈 рекомендуется
+  - Google Gemini (бесплатно)
+  - Anthropic Claude (бесплатно)
+  - OpenAI GPT-4 (платно)
+- Опционально: Google Service Account для Google Sheets
 
-### 2. Установка зависимостей
+#### 2. Установка зависимостей
 
 ```bash
 pip install -r requirements.txt
 ```
 
-### 3. Конфигурация
+#### 3. Конфигурация
 
-Скопируй `.env.example` в `.env` и заполни:
+**На Windows (PowerShell/CMD):**
+```batch
+copy .env.example .env
+# Отредактируй .env в блокноте
+```
 
+**На Linux/Mac:**
 ```bash
 cp .env.example .env
+nano .env
 ```
 
-Отредактируй `.env`:
+**Заполни в `.env`:**
 
 ```ini
-# Telegram
-TELEGRAM_BOT_TOKEN=your_bot_token_here
-ADMIN_USER_IDS=123456789,987654321
+# ⭐ ОБЯЗАТЕЛЬНЫЕ
+TELEGRAM_BOT_TOKEN=123456789:ABCdefGHIjklmnoPQRstuvWXYZ  # От @BotFather
+ADMIN_USER_IDS=123456789  # Твой ID (получи от @userinfobot)
+AI_PROVIDER=groq
 
-# AI Provider (выбери один)
-AI_PROVIDER=groq  # или: gemini, claude, openai
-GROQ_API_KEY=your_groq_key
-# GEMINI_API_KEY=your_gemini_key
-# CLAUDE_API_KEY=your_claude_key
-# OPENAI_API_KEY=your_openai_key
+# ⭐ Один из них
+GROQ_API_KEY=gsk_xxxxxxx  # https://console.groq.com
+# GEMINI_API_KEY=AIza...   # https://ai.google.dev
+# CLAUDE_API_KEY=sk-ant-... # https://console.anthropic.com
+# OPENAI_API_KEY=sk-... # https://platform.openai.com
 
-# Google Services
-GOOGLE_DRIVE_FOLDER_ID=your_folder_id
+# 📊 Для Google Sheets (опционально)
+GOOGLE_DRIVE_FOLDER_ID=1abc...xyz
 GOOGLE_SERVICE_ACCOUNT_FILE=credentials/google_service_account.json
 
-# Расписание (формат CRON: minute hour day month day_of_week)
-SCHEDULE_CRON=0 9 */3 * *  # Каждые 3 дня в 9:00
-
-# Режим
-MODE=DEV  # DEV или PROD
-LOG_LEVEL=INFO
+# Остальное (можно оставить по умолчанию)
+MODE=DEV
+SCHEDULE_CRON=0 9 */3 * *
 ```
 
-### 4. Google Sheets Setup
+#### 4. Google Sheets (опционально)
 
-1. Создай проект в [Google Cloud Console](https://console.cloud.google.com/)
-2. Включи **Google Sheets API** и **Google Drive API**
-3. Создай Service Account и скачай JSON ключ
-4. Помести JSON в `credentials/google_service_account.json`
-5. Создай папку в Google Drive где будут храниться отчеты
-6. Поделись папкой с email из Service Account
+Если нужны автоматические отчеты в Google Sheets:
 
-### 5. Запуск
+1. Открой [Google Cloud Console](https://console.cloud.google.com/)
+2. Создай новый проект
+3. Включи API: **Google Sheets API** + **Google Drive API**
+4. Создай **Service Account** и скачай JSON
+5. Помести файл: `credentials/google_service_account.json`
+6. Создай папку в Google Drive и поделись ей с email из JSON
+
+#### 5. Запуск Telegram бота
 
 ```bash
+# Windows
+run.bat
+
+# Linux/Mac
+bash run.sh
+
+# Или прямо
 python main.py
 ```
+
+✅ Когда увидишь `🚀 Запуск бота` - бот готов!
+
+Отправь ему `/start` в Telegram.
+
+#### 6. Команды бота
+
+| Команда | Описание |
+|---------|---------|
+| `/start` | Главное меню |
+| `/help` | Справка |
+| `/generate BR` | Генерировать отчет для Бразилии |
+| `/status` | Статус генераций |
+| `/geos` | Список стран |
+| `/cancel` | Отмена |
+
+---
+
+### 🐛 Решение проблем
+
+**Python не найден:**
+```bash
+# Убедись что Python 3.11+ установлен
+python --version
+
+# Если не работает, установи Python:
+# https://www.python.org (отметь "Add to PATH")
+```
+
+**Ошибка API ключа:**
+- Проверь что ключ скопирован полностью без пробелов
+- Убедись что .env в кодировке UTF-8
+
+**Telegram бот не отвечает:**
+- Проверь что токен скопирован правильно
+- Перезагрузи бота: отправь `/start`
 
 ## 📋 Команды Telegram бота
 

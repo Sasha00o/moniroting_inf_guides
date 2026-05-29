@@ -5,3 +5,4 @@ logs/
 ТЗ.md
 .env
 credentials/*.json
+reports/
