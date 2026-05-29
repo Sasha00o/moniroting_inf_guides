@@ -6,3 +6,4 @@ logs/
 .env
 credentials/*.json
 reports/
+.claude/
