@@ -19,6 +19,7 @@ class GeoError(ValueError):
 
 # gl/hl — параметры Google News RSS; locale — для отображения в отчёте
 GEO_REGISTRY: dict[str, dict[str, str]] = {
+    # Латинская Америка (основные)
     "AR": {"name": "Аргентина", "flag": "🇦🇷", "gl": "AR", "hl": "es-419", "locale": "es_AR"},
     "BO": {"name": "Боливия", "flag": "🇧🇴", "gl": "BO", "hl": "es-419", "locale": "es_BO"},
     "BR": {"name": "Бразилия", "flag": "🇧🇷", "gl": "BR", "hl": "pt-BR", "locale": "pt_BR"},
@@ -37,14 +38,46 @@ GEO_REGISTRY: dict[str, dict[str, str]] = {
     "SV": {"name": "Сальвадор", "flag": "🇸🇻", "gl": "SV", "hl": "es-419", "locale": "es_SV"},
     "UY": {"name": "Уругвай", "flag": "🇺🇾", "gl": "UY", "hl": "es-419", "locale": "es_UY"},
     "VE": {"name": "Венесуэла", "flag": "🇻🇪", "gl": "VE", "hl": "es-419", "locale": "es_VE"},
+
+    # Азия (основные)
     "IN": {"name": "Индия", "flag": "🇮🇳", "gl": "IN", "hl": "en-IN", "locale": "en_IN"},
     "ID": {"name": "Индонезия", "flag": "🇮🇩", "gl": "ID", "hl": "id", "locale": "id_ID"},
     "PH": {"name": "Филиппины", "flag": "🇵🇭", "gl": "PH", "hl": "en-PH", "locale": "en_PH"},
     "TH": {"name": "Таиланд", "flag": "🇹🇭", "gl": "TH", "hl": "th", "locale": "th_TH"},
     "VN": {"name": "Вьетнам", "flag": "🇻🇳", "gl": "VN", "hl": "vi", "locale": "vi_VN"},
+    "MY": {"name": "Малайзия", "flag": "🇲🇾", "gl": "MY", "hl": "en-MY", "locale": "en_MY"},
+    "SG": {"name": "Сингапур", "flag": "🇸🇬", "gl": "SG", "hl": "en-SG", "locale": "en_SG"},
+    "PK": {"name": "Пакистан", "flag": "🇵🇰", "gl": "PK", "hl": "en-PK", "locale": "en_PK"},
+    "BD": {"name": "Бангладеш", "flag": "🇧🇩", "gl": "BD", "hl": "bn", "locale": "bn_BD"},
+
+    # Африка
     "NG": {"name": "Нигерия", "flag": "🇳🇬", "gl": "NG", "hl": "en-NG", "locale": "en_NG"},
     "ZA": {"name": "ЮАР", "flag": "🇿🇦", "gl": "ZA", "hl": "en-ZA", "locale": "en_ZA"},
     "KE": {"name": "Кения", "flag": "🇰🇪", "gl": "KE", "hl": "en-KE", "locale": "en_KE"},
+    "EG": {"name": "Египет", "flag": "🇪🇬", "gl": "EG", "hl": "ar", "locale": "ar_EG"},
+    "MA": {"name": "Марокко", "flag": "🇲🇦", "gl": "MA", "hl": "ar", "locale": "ar_MA"},
+
+    # Европа (популярные для арбитража)
+    "PL": {"name": "Польша", "flag": "🇵🇱", "gl": "PL", "hl": "pl", "locale": "pl_PL"},
+    "RO": {"name": "Румыния", "flag": "🇷🇴", "gl": "RO", "hl": "ro", "locale": "ro_RO"},
+    "CZ": {"name": "Чехия", "flag": "🇨🇿", "gl": "CZ", "hl": "cs", "locale": "cs_CZ"},
+    "GR": {"name": "Греция", "flag": "🇬🇷", "gl": "GR", "hl": "el", "locale": "el_GR"},
+    "PT": {"name": "Португалия", "flag": "🇵🇹", "gl": "PT", "hl": "pt-PT", "locale": "pt_PT"},
+    "ES": {"name": "Испания", "flag": "🇪🇸", "gl": "ES", "hl": "es", "locale": "es_ES"},
+    "IT": {"name": "Италия", "flag": "🇮🇹", "gl": "IT", "hl": "it", "locale": "it_IT"},
+    "FR": {"name": "Франция", "flag": "🇫🇷", "gl": "FR", "hl": "fr", "locale": "fr_FR"},
+    "DE": {"name": "Германия", "flag": "🇩🇪", "gl": "DE", "hl": "de", "locale": "de_DE"},
+
+    # Ближний Восток
+    "TR": {"name": "Турция", "flag": "🇹🇷", "gl": "TR", "hl": "tr", "locale": "tr_TR"},
+    "SA": {"name": "Саудовская Аравия", "flag": "🇸🇦", "gl": "SA", "hl": "ar", "locale": "ar_SA"},
+    "AE": {"name": "ОАЭ", "flag": "🇦🇪", "gl": "AE", "hl": "ar", "locale": "ar_AE"},
+
+    # Англоязычные
+    "US": {"name": "США", "flag": "🇺🇸", "gl": "US", "hl": "en-US", "locale": "en_US"},
+    "GB": {"name": "Великобритания", "flag": "🇬🇧", "gl": "GB", "hl": "en-GB", "locale": "en_GB"},
+    "CA": {"name": "Канада", "flag": "🇨🇦", "gl": "CA", "hl": "en-CA", "locale": "en_CA"},
+    "AU": {"name": "Австралия", "flag": "🇦🇺", "gl": "AU", "hl": "en-AU", "locale": "en_AU"},
 }
 
 

@@ -52,6 +52,7 @@ GEO_NEWS_QUERIES: dict[str, str] = {
     "NG": "Nigeria",
     "ZA": "South Africa",
     "KE": "Kenya",
+    "PT": "Portugal",
 }
 
 # ceid для Google News RSS (формат region:locale)
@@ -62,7 +63,20 @@ GEO_GOOGLE_CEID: dict[str, str] = {
     "CO": "CO:es-419",
     "CL": "CL:es-419",
     "PE": "PE:es-419",
+    "BO": "BO:es-419",
+    "CR": "CR:es-419",
+    "DO": "DO:es-419",
+    "EC": "EC:es-419",
+    "GT": "GT:es-419",
+    "HN": "HN:es-419",
+    "NI": "NI:es-419",
+    "PA": "PA:es-419",
+    "PY": "PY:es-419",
+    "SV": "SV:es-419",
+    "UY": "UY:es-419",
+    "VE": "VE:es-419",
     "IN": "IN:en-IN",
+    "PT": "PT:pt-PT",
     "ID": "ID:id",
     "PH": "PH:en-PH",
     "TH": "TH:th",
@@ -81,7 +95,8 @@ def _clean_text(html: str) -> str:
     """Убрать HTML из summary — AI получает чистый текст."""
     if not html:
         return ""
-    text = BeautifulSoup(html, "html.parser").get_text(separator=" ", strip=True)
+    text = BeautifulSoup(html, "html.parser").get_text(
+        separator=" ", strip=True)
     return unescape(re.sub(r"\s+", " ", text)).strip()
 
 
@@ -189,7 +204,7 @@ async def parse_rss_feeds(feed_urls: List[str], days_back: int | None = None) ->
         try:
             news_logger.debug(f"RSS: {feed_url}")
             feed = await _fetch_feed(feed_url)
-            source_name = feed.feed.get("title", feed_url)
+            source_name = feed.feed.get("title") if hasattr(feed, 'feed') and feed.feed else feed_url
             count_before = len(all_news)
 
             for entry in feed.entries:
@@ -245,7 +260,8 @@ def filter_by_keywords(news_items: List[RawNews], keywords: List[str]) -> List[R
         if any(keyword.lower() in text for keyword in keywords):
             filtered.append(news)
 
-    news_logger.info(f"Фильтр по ключевым словам: {len(filtered)}/{len(news_items)}")
+    news_logger.info(
+        f"Фильтр по ключевым словам: {len(filtered)}/{len(news_items)}")
     return filtered
 
 
@@ -280,7 +296,8 @@ async def aggregate_news(geo: str, days_back: int | None = None) -> List[RawNews
     unique_news = _sort_by_date_desc(unique_news)
 
     if settings.NEWS_MAX_ITEMS and len(unique_news) > settings.NEWS_MAX_ITEMS:
-        news_logger.info(f"Ограничение до {settings.NEWS_MAX_ITEMS} (самые свежие)")
+        news_logger.info(
+            f"Ограничение до {settings.NEWS_MAX_ITEMS} (самые свежие)")
         unique_news = unique_news[: settings.NEWS_MAX_ITEMS]
 
     news_logger.info(f"Итого для {geo}: {len(unique_news)} новостей")

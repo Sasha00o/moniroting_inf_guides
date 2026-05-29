@@ -16,8 +16,9 @@ from utils.helpers import format_geo_title, validate_geo
 from utils.logger import ai_logger
 
 # Сколько новостей отдавать в один промпт классификации (лимит токенов)
-# Groq: 12000 токенов/запрос, ~500 токенов на новость = макс 20 новостей
-MAX_NEWS_IN_CLASSIFY_PROMPT = 15
+# Production: GPT-4o-mini/Gemini поддерживают большие контексты
+# ~500 токенов на новость, можем обработать до 100 новостей за раз
+MAX_NEWS_IN_CLASSIFY_PROMPT = 100
 
 # source_url берётся из новости по news_index, не из ответа AI
 _INFOREASON_FIELDS = (
@@ -116,9 +117,22 @@ class AIAgent:
                 f"(лимит {MAX_NEWS_IN_CLASSIFY_PROMPT})"
             )
 
+        # Подстраиваем запрошенное количество инфоповодов под объём новостей:
+        # не просим явно больше, чем разумно можно получить из N новостей.
+        max_possible = max(1, len(batch) * 3)
+        if max_possible < min_count:
+            ai_logger.warning(
+                f"Запрошено слишком много инфоповодов для {len(batch)} новостей; "
+                f"корректирую диапазон {min_count}-{max_count} → 1-{max_possible}"
+            )
+            min_count = 1
+            max_count = max_possible
+        else:
+            min_count = min(min_count, max_possible)
+            max_count = min(max_count, max_possible)
+
         ai_logger.info(
-            f"Классификация {len(batch)} новостей → {min_count}-{max_count} "
-            f"инфоповодов ({geo})"
+            f"Классификация {len(batch)} новостей → {min_count}-{max_count} инфоповодов ({geo})"
         )
 
         geo_title = format_geo_title(geo)
@@ -137,7 +151,7 @@ class AIAgent:
 {{
   "news_index": <номер новости из списка>,
   "title": "<заголовок инфоповода>",
-  "source_type": "<топовое СМИ / локальный таблоид / соцсети / форум>",
+  "source_type": "<ТОЧНЫЙ тип источника: топовое СМИ / локальный таблоид / Twitter-тренд / TikTok / Telegram-канал / форум / YouTube>",
   "date": "<YYYY-MM-DD>",
   "category": "<экономика / политика / соцсети / селеба / скандал / банки-налоги / страхи / технологии / здоровье>",
   "description": "<2–3 предложения>",
@@ -518,7 +532,7 @@ JSON-массив:
         from openai import APIError, AuthenticationError, RateLimitError
 
         try:
-            response = self.client.chat.completions.create(
+            response = self.client.chat.completions.create(  # type: ignore
                 model=self._chat_model,
                 max_tokens=settings.ACTIVE_AI_MAX_TOKENS,
                 temperature=temperature,
@@ -548,19 +562,19 @@ JSON-массив:
 
     def _call_ai_sync(self, prompt: str, temperature: float) -> str:
         if self.provider == "claude":
-            response = self.client.messages.create(
+            response = self.client.messages.create(  # type: ignore
                 model=settings.CLAUDE_MODEL,
                 max_tokens=settings.ACTIVE_AI_MAX_TOKENS,
                 temperature=temperature,
                 messages=[{"role": "user", "content": prompt}],
             )
-            return response.content[0].text
+            return response.content[0].text  # type: ignore
 
         if self.provider in ("openai", "groq", "deepseek", "openrouter"):
             return self._call_openai_compatible_chat(prompt, temperature)
 
         if self.provider == "gemini":
-            response = self.client.generate_content(
+            response = self.client.generate_content(  # type: ignore
                 prompt,
                 generation_config={
                     "temperature": temperature,
@@ -628,20 +642,24 @@ JSON-массив:
                 last_complete = truncated.rfind("},")
                 if last_complete > 0:
                     fixed_json = truncated[:last_complete+1] + "]"
-                    ai_logger.warning(f"Попытка восстановить обрезанный JSON (стратегия 1)")
+                    ai_logger.warning(
+                        f"Попытка восстановить обрезанный JSON (стратегия 1)")
                     data = json.loads(fixed_json)
                     if isinstance(data, list) and len(data) > 0:
-                        ai_logger.info(f"Восстановлено {len(data)} элементов из обрезанного JSON")
+                        ai_logger.info(
+                            f"Восстановлено {len(data)} элементов из обрезанного JSON")
                         return data
 
                 # Стратегия 2: Найти последний закрывающий }
                 last_brace = truncated.rfind("}")
                 if last_brace > 0:
                     fixed_json = truncated[:last_brace+1] + "]"
-                    ai_logger.warning(f"Попытка восстановить обрезанный JSON (стратегия 2)")
+                    ai_logger.warning(
+                        f"Попытка восстановить обрезанный JSON (стратегия 2)")
                     data = json.loads(fixed_json)
                     if isinstance(data, list) and len(data) > 0:
-                        ai_logger.info(f"Восстановлено {len(data)} элементов из обрезанного JSON")
+                        ai_logger.info(
+                            f"Восстановлено {len(data)} элементов из обрезанного JSON")
                         return data
 
                 # Стратегия 3: Удалить последний неполный объект
@@ -650,14 +668,17 @@ JSON-массив:
                 prev_brace = temp.rfind("}")
                 if prev_brace > 0:
                     fixed_json = truncated[:prev_brace+1] + "]"
-                    ai_logger.warning(f"Попытка восстановить обрезанный JSON (стратегия 3)")
+                    ai_logger.warning(
+                        f"Попытка восстановить обрезанный JSON (стратегия 3)")
                     data = json.loads(fixed_json)
                     if isinstance(data, list) and len(data) > 0:
-                        ai_logger.info(f"Восстановлено {len(data)} элементов из обрезанного JSON")
+                        ai_logger.info(
+                            f"Восстановлено {len(data)} элементов из обрезанного JSON")
                         return data
 
             except Exception as recovery_error:
-                ai_logger.error(f"Не удалось восстановить JSON: {recovery_error}")
+                ai_logger.error(
+                    f"Не удалось восстановить JSON: {recovery_error}")
 
             return []
 

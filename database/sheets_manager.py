@@ -44,14 +44,7 @@ class SheetsManager:
             elif service_account_path and os.path.exists(service_account_path):
                 # Service Account авторизация
                 sheets_logger.info("Использую Service Account авторизацию")
-                from google.oauth2.service_account import Credentials
-
-                creds = Credentials.from_service_account_file(
-                    service_account_path,
-                    scopes=['https://www.googleapis.com/auth/spreadsheets',
-                            'https://www.googleapis.com/auth/drive']
-                )
-                self._client = self.gspread.authorize(creds)
+                self._client = self.gspread.service_account(filename=service_account_path)  # type: ignore
             else:
                 raise ValueError(
                     "Не найдены credentials для Google Sheets. "
@@ -107,7 +100,14 @@ class SheetsManager:
                     "2. Скопируйте созданный файл credentials/token.json на сервер"
                 )
 
-        return self.gspread.authorize(creds)
+        # Используем метод authorize из gspread
+        try:
+            from gspread import auth
+            return auth.authorize(creds)  # type: ignore
+        except (ImportError, AttributeError):
+            # Fallback для старых версий gspread
+            import gspread as gspread_lib
+            return gspread_lib.authorize(creds)  # type: ignore
 
     def create_report_file(self, geo: str, on_date: date | None = None) -> tuple[str, str]:
         """
@@ -172,9 +172,28 @@ class SheetsManager:
             data.append([f"Ответственный: {responsible}"])
         else:
             data.append([""])
+        # Ссылка на предыдущий выпуск (пока пусто, можно добавить логику поиска)
+        data.append(["Предыдущий выпуск: —"])
         data.append([""])
 
-        return data, start_row + 5
+        return data, start_row + 6
+
+    def _prepare_block_0_feedback(self, start_row: int):
+        """Подготовка блока обратной связи по прошлым выпускам."""
+        data = []
+        data.append(["📊 БЛОК 0: ОБРАТНАЯ СВЯЗЬ ПО ПРОШЛЫМ ВЫПУСКАМ"])
+        data.append([""])
+        data.append(["✅ Что зашло (высокая конверсия):"])
+        data.append(["— Заполните вручную после анализа результатов"])
+        data.append([""])
+        data.append(["❌ Что не зашло (низкая конверсия):"])
+        data.append(["— Заполните вручную после анализа результатов"])
+        data.append([""])
+        data.append(["💡 Выводы и рекомендации:"])
+        data.append(["— Заполните вручную"])
+        data.append([""])
+
+        return data, start_row + len(data) + 1
 
     def _prepare_block_1_inforeasons(self, inforeasons: List[InfoReason], start_row: int):
         """Подготовка данных блока 1 для batch update."""
@@ -301,6 +320,10 @@ class SheetsManager:
         )
         all_data.extend(header_data)
 
+        # Блок 0: Обратная связь
+        block0_data, current_row = self._prepare_block_0_feedback(current_row)
+        all_data.extend(block0_data)
+
         # Блок 1: Инфоповоды
         block1_data, current_row = self._prepare_block_1_inforeasons(report.inforeasons, current_row)
         all_data.extend(block1_data)
@@ -322,13 +345,14 @@ class SheetsManager:
         all_data.extend(block5_data)
 
         # Блок 6: Срочность
-        block6_data, current_row = self._prepare_block_6_urgency(report.urgency_board, current_row)
-        all_data.extend(block6_data)
+        if report.urgency_board:
+            block6_data, current_row = self._prepare_block_6_urgency(report.urgency_board, current_row)
+            all_data.extend(block6_data)
 
         # Batch update - один запрос вместо сотен
         sheets_logger.info(f"Запись {len(all_data)} строк в Google Sheets через batch update")
         if all_data:
-            worksheet.update(all_data, value_input_option='USER_ENTERED')
+            worksheet.batch_update([{'range': 'A1', 'values': all_data}])
 
         sheets_logger.info(f"Отчет записан в Google Sheets: {file_url}")
         return file_url

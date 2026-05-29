@@ -9,12 +9,12 @@ class Settings(BaseSettings):
         env_file='.env', env_file_encoding='utf-8')
 
     # Telegram Bot
-    TELEGRAM_BOT_TOKEN: str
-    ADMIN_USER_IDS: str
+    TELEGRAM_BOT_TOKEN: str = ""
+    ADMIN_USER_IDS: str = ""
 
     # AI Provider
     AI_PROVIDER: Literal['gemini', 'claude',
-                         'openai', 'groq', 'deepseek', 'openrouter']
+                         'openai', 'groq', 'deepseek', 'openrouter'] = 'groq'
 
     GEMINI_API_KEY: str | None = None
     CLAUDE_API_KEY: str | None = None
@@ -24,7 +24,7 @@ class Settings(BaseSettings):
     OPENROUTER_API_KEY: str | None = None
 
     # Google Services
-    GOOGLE_DRIVE_FOLDER_ID: str
+    GOOGLE_DRIVE_FOLDER_ID: str = ""
     # OAuth 2.0 (приоритет) или Service Account
     GOOGLE_OAUTH_CREDENTIALS: str | None = None
     GOOGLE_SERVICE_ACCOUNT_FILE: str | None = 'credentials/google_service_account.json'
@@ -33,7 +33,7 @@ class Settings(BaseSettings):
     SCHEDULE_CRON: str = '0 9 */3 * *'
 
     # Application Settings
-    MODE: Literal['DEV', 'TEST', 'PROD'] = 'DEV'
+    MODE: Literal['DEV', 'TEST', 'PROD'] = 'PROD'
     LOG_LEVEL: Literal['DEBUG', 'INFO',
                        'WARNING', 'ERROR', 'CRITICAL'] = 'INFO'
 
@@ -42,14 +42,13 @@ class Settings(BaseSettings):
     CLAUDE_MAX_TOKENS: int = 4096
     CLAUDE_TEMPERATURE: float = 0.7
 
-    # OpenAI Model Settings
-    OPENAI_MODEL: str = 'gpt-4o-mini'
-    OPENAI_MAX_TOKENS: int = 4096
+    # OpenAI Model Settings (Production)
+    OPENAI_MODEL: str = 'gpt-4o-mini'  # Быстрая и качественная модель для прода
+    OPENAI_MAX_TOKENS: int = 16384
     OPENAI_TEMPERATURE: float = 0.7
 
-    # Gemini Model Settings
-
-    GEMINI_MODEL: str = 'gemini-2.5-flash'
+    # Gemini Model Settings (Production)
+    GEMINI_MODEL: str = 'gemini-2.0-flash-exp'  # Самая быстрая и качественная
     GEMINI_MAX_TOKENS: int = 8192
     GEMINI_TEMPERATURE: float = 0.7
 
@@ -71,17 +70,18 @@ class Settings(BaseSettings):
     OPENROUTER_MAX_TOKENS: int = 8192
     OPENROUTER_TEMPERATURE: float = 0.7
 
-    # News Parser Settings
+    # News Parser Settings (Production)
     NEWS_DAYS_BACK: int = 7
-    NEWS_MAX_ITEMS: int = 50
+    NEWS_MAX_ITEMS: int = 100  # Увеличено для прода
 
-    INFOREASONS_MIN: int = 10
-    INFOREASONS_MAX: int = 20
-    ANGLES_MIN: int = 20
-    ANGLES_MAX: int = 30
-    HEADLINES_MIN: int = 30
-    HEADLINES_MAX: int = 50
-    TOP_IDEAS_COUNT: int = 5
+    # Generation Limits (Production - увеличены для качества)
+    INFOREASONS_MIN: int = 15
+    INFOREASONS_MAX: int = 25
+    ANGLES_MIN: int = 30
+    ANGLES_MAX: int = 50
+    HEADLINES_MIN: int = 50
+    HEADLINES_MAX: int = 80
+    TOP_IDEAS_COUNT: int = 10
 
     @computed_field
     @property
