@@ -204,7 +204,8 @@ async def parse_rss_feeds(feed_urls: List[str], days_back: int | None = None) ->
         try:
             news_logger.debug(f"RSS: {feed_url}")
             feed = await _fetch_feed(feed_url)
-            source_name = feed.feed.get("title") if hasattr(feed, 'feed') and feed.feed else feed_url
+            source_name = feed.feed.get("title") if hasattr(
+                feed, 'feed') and feed.feed else feed_url
             count_before = len(all_news)
 
             for entry in feed.entries:

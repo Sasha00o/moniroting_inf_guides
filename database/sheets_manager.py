@@ -34,8 +34,10 @@ class SheetsManager:
             import os
 
             # Проверяем, какой метод авторизации использовать
-            oauth_creds_path = getattr(settings, 'GOOGLE_OAUTH_CREDENTIALS', None)
-            service_account_path = getattr(settings, 'GOOGLE_SERVICE_ACCOUNT_FILE', None)
+            oauth_creds_path = getattr(
+                settings, 'GOOGLE_OAUTH_CREDENTIALS', None)
+            service_account_path = getattr(
+                settings, 'GOOGLE_SERVICE_ACCOUNT_FILE', None)
 
             if oauth_creds_path and os.path.exists(oauth_creds_path):
                 # OAuth 2.0 авторизация
@@ -44,7 +46,8 @@ class SheetsManager:
             elif service_account_path and os.path.exists(service_account_path):
                 # Service Account авторизация
                 sheets_logger.info("Использую Service Account авторизацию")
-                self._client = self.gspread.service_account(filename=service_account_path)  # type: ignore
+                self._client = self.gspread.service_account(
+                    filename=service_account_path)  # type: ignore
             else:
                 raise ValueError(
                     "Не найдены credentials для Google Sheets. "
@@ -70,7 +73,8 @@ class SheetsManager:
         # Загружаем существующий токен
         if os.path.exists(token_path):
             try:
-                creds = OAuthCredentials.from_authorized_user_file(token_path, SCOPES)
+                creds = OAuthCredentials.from_authorized_user_file(
+                    token_path, SCOPES)
                 sheets_logger.info("Загружен существующий OAuth токен")
             except Exception as e:
                 sheets_logger.warning(f"Не удалось загрузить токен: {e}")
@@ -132,7 +136,8 @@ class SheetsManager:
             # Создаем новый файл в указанной папке (если есть)
             if settings.GOOGLE_DRIVE_FOLDER_ID:
                 # Создаем файл сразу в нужной папке
-                spreadsheet = self.client.create(filename, folder_id=settings.GOOGLE_DRIVE_FOLDER_ID)
+                spreadsheet = self.client.create(
+                    filename, folder_id=settings.GOOGLE_DRIVE_FOLDER_ID)
             else:
                 # Создаем в корне Drive Service Account
                 spreadsheet = self.client.create(filename)
@@ -199,11 +204,14 @@ class SheetsManager:
         """Подготовка данных блока 1 для batch update."""
         data = []
         data.append(["📰 БЛОК 1: СЫРЫЕ ИНФОПОВОДЫ"])
-        data.append(["Заголовок", "Источник", "Дата", "Категория", "Описание", "Триггер", "Срочность"])
+        data.append(["Заголовок", "Источник", "Дата", "Категория",
+                    "Описание", "Триггер", "Срочность"])
 
         for ir in inforeasons:
-            urgency_display = "🔥 Срочно" if "24-48" in ir.urgency or "срочно" in ir.urgency.lower() else "⏳ " + ir.urgency
-            data.append([ir.title, ir.source_url, ir.date, ir.category, ir.description, ir.emotional_trigger, urgency_display])
+            urgency_display = "🔥 Срочно" if "24-48" in ir.urgency or "срочно" in ir.urgency.lower() else "⏳ " + \
+                ir.urgency
+            data.append([ir.title, ir.source_url, ir.date, ir.category,
+                        ir.description, ir.emotional_trigger, urgency_display])
 
         data.append([""])
         return data, start_row + len(data) + 1
@@ -218,10 +226,12 @@ class SheetsManager:
             data.append([""])
             return data, start_row + len(data) + 1
 
-        data.append(["ID", "Инфоповод", "Угол", "Связь с офером", "Боль", "Тип", "Приоритет"])
+        data.append(["ID", "Инфоповод", "Угол", "Связь с офером",
+                    "Боль", "Тип", "Приоритет"])
 
         for angle in angles:
-            data.append([str(angle.id), f"#{angle.inforeason_id}", angle.angle_text, angle.offer_connection, angle.target_pain, angle.creative_type, angle.priority])
+            data.append([str(angle.id), f"#{angle.inforeason_id}", angle.angle_text,
+                        angle.offer_connection, angle.target_pain, angle.creative_type, angle.priority])
 
         data.append([""])
         return data, start_row + len(data) + 1
@@ -239,7 +249,8 @@ class SheetsManager:
         data.append(["Заголовок", "Идея #", "Формат", "Длина"])
 
         for headline in headlines:
-            data.append([headline.text, str(headline.angle_id), headline.format, str(headline.length)])
+            data.append([headline.text, str(headline.angle_id),
+                        headline.format, str(headline.length)])
 
         data.append([""])
         return data, start_row + len(data) + 1
@@ -257,7 +268,8 @@ class SheetsManager:
         data.append(["Ранг", "Идея #", "Обоснование", "Свежесть", "Триггер"])
 
         for rec in recommendations[:5]:
-            data.append([f"#{rec.rank}", str(rec.angle_id), rec.reasoning[:100], f"{rec.freshness_score}/10", f"{rec.trigger_strength_score}/10"])
+            data.append([f"#{rec.rank}", str(rec.angle_id), rec.reasoning[:100],
+                        f"{rec.freshness_score}/10", f"{rec.trigger_strength_score}/10"])
 
         data.append([""])
         return data, start_row + len(data) + 1
@@ -272,10 +284,12 @@ class SheetsManager:
             data.append([""])
             return data, start_row + len(data) + 1
 
-        data.append(["Инфоповод #", "Юридический", "Бан платформой", "Негатив аудитории", "Срок"])
+        data.append(["Инфоповод #", "Юридический",
+                    "Бан платформой", "Негатив аудитории", "Срок"])
 
         for risk in risks[:5]:
-            data.append([str(risk.inforeason_id), risk.legal_risk[:30], risk.platform_ban_risk[:30], risk.audience_backlash_risk[:30], risk.expiry_time[:30]])
+            data.append([str(risk.inforeason_id), risk.legal_risk[:30], risk.platform_ban_risk[:30],
+                        risk.audience_backlash_risk[:30], risk.expiry_time[:30]])
 
         data.append([""])
         return data, start_row + len(data) + 1
@@ -285,10 +299,12 @@ class SheetsManager:
         data = []
         data.append(["⏰ БЛОК 6: СРОЧНОСТЬ"])
 
-        urgent_str = ", ".join(str(id) for id in urgency_board.urgent_48h) if urgency_board.urgent_48h else "—"
+        urgent_str = ", ".join(
+            str(id) for id in urgency_board.urgent_48h) if urgency_board.urgent_48h else "—"
         data.append(["🔥 Срочно (24-48ч)", urgent_str])
 
-        wait_str = ", ".join(str(id) for id in urgency_board.can_wait) if urgency_board.can_wait else "—"
+        wait_str = ", ".join(
+            str(id) for id in urgency_board.can_wait) if urgency_board.can_wait else "—"
         data.append(["⏳ Можно позже", wait_str])
 
         return data, start_row + len(data) + 1
@@ -325,32 +341,39 @@ class SheetsManager:
         all_data.extend(block0_data)
 
         # Блок 1: Инфоповоды
-        block1_data, current_row = self._prepare_block_1_inforeasons(report.inforeasons, current_row)
+        block1_data, current_row = self._prepare_block_1_inforeasons(
+            report.inforeasons, current_row)
         all_data.extend(block1_data)
 
         # Блок 2: Углы
-        block2_data, current_row = self._prepare_block_2_angles(report.angles, current_row)
+        block2_data, current_row = self._prepare_block_2_angles(
+            report.angles, current_row)
         all_data.extend(block2_data)
 
         # Блок 3: Заголовки
-        block3_data, current_row = self._prepare_block_3_headlines(report.headlines, current_row)
+        block3_data, current_row = self._prepare_block_3_headlines(
+            report.headlines, current_row)
         all_data.extend(block3_data)
 
         # Блок 4: Рекомендации
-        block4_data, current_row = self._prepare_block_4_recommendations(report.recommendations, current_row)
+        block4_data, current_row = self._prepare_block_4_recommendations(
+            report.recommendations, current_row)
         all_data.extend(block4_data)
 
         # Блок 5: Риски
-        block5_data, current_row = self._prepare_block_5_risks(report.risks, current_row)
+        block5_data, current_row = self._prepare_block_5_risks(
+            report.risks, current_row)
         all_data.extend(block5_data)
 
         # Блок 6: Срочность
         if report.urgency_board:
-            block6_data, current_row = self._prepare_block_6_urgency(report.urgency_board, current_row)
+            block6_data, current_row = self._prepare_block_6_urgency(
+                report.urgency_board, current_row)
             all_data.extend(block6_data)
 
         # Batch update - один запрос вместо сотен
-        sheets_logger.info(f"Запись {len(all_data)} строк в Google Sheets через batch update")
+        sheets_logger.info(
+            f"Запись {len(all_data)} строк в Google Sheets через batch update")
         if all_data:
             worksheet.batch_update([{'range': 'A1', 'values': all_data}])
 
